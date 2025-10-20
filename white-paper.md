@@ -1,4 +1,4 @@
-# Lucendex — White Paper
+# Lucendex White Paper
 
 **Version 1.0** Date: October 2025
 
