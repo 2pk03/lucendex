@@ -125,24 +125,29 @@ These actions reflect both the risk of centralized control (reimbursements, disc
 
 ***Figure 3: Total Liquidation Comparisons (Oct 10 vs Prior Crashes)***
 ```mermaid
-%%{init: {
-  "theme":"base",
-  "themeVariables":{
-    "fontFamily":"Inter, ui-sans-serif, system-ui",
-    "primaryColor":"#f8fafc",        
-    "primaryTextColor":"#0f172a",    
-    "secondaryColor":"#e5e7eb",      
-    "tertiaryColor":"#ffffff",       
-    "lineColor":"#94a3b8"            
-  }
-}}%%
-mindmap
-  root(("Total Liquidations by Major Event (USD Billion)"))
-    Oct 10 2025 Crash — 19 B
-    FTX Collapse 2022 — 8 B
-    Terra LUNA 2022 — 6 B
-    March 2020 COVID — 4 B
-    May 2021 Mini-Crash — 3 B
+graph LR
+  %% Global styles
+  classDef default fill:#facc15,stroke:#b45309,color:#0f172a,stroke-width:1px;  %% yellow nodes
+  classDef hot fill:#dc2626,stroke:#7f1d1d,color:#ffffff,stroke-width:1.5px;    %% fire red node
+
+  %% Nodes
+  A["Total Liquidations<br/>by Major Event<br/>(USD Billion)"]
+  B["Oct 10 2025: 19 B"]
+  C["FTX 2022: 8 B"]
+  D["Terra LUNA 2022: 6 B"]
+  E["2020 COVID: 4 B"]
+  F["May 2021: 3 B"]
+
+  %% Edges (mindmap-like spokes)
+  A --> B
+  A --> C
+  A --> D
+  A --> E
+  A --> F
+
+  %% Highlight the hot node
+  class B hot;
+
 ```
 
 
