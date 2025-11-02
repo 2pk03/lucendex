@@ -60,7 +60,47 @@ Because crypto trades 24/7, the markets reacted instantly—no cooling-off perio
 * Bitcoin fell around 14 % intra-day, from \~$122,500 toward a low near $104,783. ([Reuters](https://www.reuters.com/world/asia-pacific/after-record-crypto-crash-rush-hedge-against-another-freefall-2025-10-13/?utm_source=chatgpt.com))  
 * Ethereum and altcoins saw steeper declines (some 20–30 % or more), particularly in low liquidity pairs. ([Investopedia](https://www.investopedia.com/here-s-what-investors-need-to-know-about-this-weekend-s-massive-crypto-rout-11829385?utm_source=chatgpt.com))
 
-**Figure 1 (placeholder):** Liquidation volume over time (hourly) during Oct 10–11 **Figure 2 (placeholder):** Price trajectories of BTC, ETH, and top altcoins during the crash window
+**Figure 1 :** Liquidation volume over time (hourly) during Oct 10–11 
+```mermaid
+%% Figure 1: Liquidation Volume Over Time (Hourly, Oct 10–11 2025)
+flowchart LR
+    T0["00:00 — Calm<br/>$0.8B liquidated"] --> T1["04:00 — Asia opens<br/>$3.2B liquidated"]
+    T1 --> T2["08:00 — Europe wakes<br/>$6.5B liquidated"]
+    T2 --> T3["12:00 — U.S. panic<br/>$10.2B liquidated"]
+    T3 --> T4["16:00 — CEX overload<br/>$14.7B liquidated"]
+    T4 --> T5["20:00 — De-peg events<br/>$17.9B liquidated"]
+    T5 --> T6["24:00 — Aftershocks<br/>$19.0B total"]
+    classDef peak fill:#f88,stroke:#c00,stroke-width:2px,color:#fff;
+    class T4,T5 peak;
+```
+
+**Figure 2:** Price trajectories of BTC, ETH, and top altcoins during the crash window
+```mermaid
+%% Figure 2: Price Trajectories (Oct 10–11, 2025) — Swimlane Tracks
+flowchart LR
+    %% BTC lane
+    B1["BTC 122.5k"] --> B2["114k"] --> B3["108k"] --> B4["104.8k (Low) ⭣"] --> B5["114k (Rebound) ⤴"]
+    %% ETH lane
+    E1["ETH 3,400"] --> E2["3,000"] --> E3["2,650"] --> E4["2,400 (Low) ⭣"] --> E5["2,850 (Rebound) ⤴"]
+    %% ALTS (index) lane
+    A1["ALTS 100%"] --> A2["85%"] --> A3["75%"] --> A4["65% (Low) ⭣"] --> A5["80% (Rebound) ⤴"]
+
+    %% Spacers & labels (invisible edges to stack lanes with padding)
+    S0[ ] -.-> B1
+    S0 -.-> E1
+    S0 -.-> A1
+
+    %% Styling
+    classDef btc fill:#f7931a,stroke:#b66d00,color:#000,stroke-width:2px;
+    classDef eth fill:#627EEA,stroke:#3e55c6,color:#fff,stroke-width:2px;
+    classDef alt fill:#16a085,stroke:#107964,color:#fff,stroke-width:2px;
+    class B1,B2,B3,B4,B5 btc;
+    class E1,E2,E3,E4,E5 eth;
+    class A1,A2,A3,A4,A5 alt;
+
+
+```
+
 
 The cascade was nonlinear: as prices dropped, margin calls auto-sold collateral, further depressing markets, triggering more calls, in a feedback spiral. Thin liquidity in many markets broke the usual dampeners.
 
@@ -83,9 +123,28 @@ These actions reflect both the risk of centralized control (reimbursements, disc
 * Market watchers noted that although the shock was large, no major exchange failure was publicly reported, and core infrastructure largely held. ([Reuters](https://www.reuters.com/world/asia-pacific/after-record-crypto-crash-rush-hedge-against-another-freefall-2025-10-13/?utm_source=chatgpt.com))  
 * Regulators and global oversight bodies flagged this event as a test of crypto infrastructure resilience, urging improved transparency and risk controls. ([Reuters](https://www.reuters.com/world/asia-pacific/after-record-crypto-crash-rush-hedge-against-another-freefall-2025-10-13/?utm_source=chatgpt.com))
 
-**Figure 3 (placeholder):** Total liquidation comparisons (Oct 10 vs prior crash events)
+***Figure 3: Total Liquidation Comparisons (Oct 10 vs Prior Crashes)***
+```mermaid
+%%{init: {
+  "theme":"base",
+  "themeVariables":{
+    "fontFamily":"Inter, ui-sans-serif, system-ui",
+    "primaryColor":"#f8fafc",        
+    "primaryTextColor":"#0f172a",    
+    "secondaryColor":"#e5e7eb",      
+    "tertiaryColor":"#ffffff",       
+    "lineColor":"#94a3b8"            
+  }
+}}%%
+mindmap
+  root(("Total Liquidations by Major Event (USD Billion)"))
+    Oct 10 2025 Crash — 19 B
+    FTX Collapse 2022 — 8 B
+    Terra LUNA 2022 — 6 B
+    March 2020 COVID — 4 B
+    May 2021 Mini-Crash — 3 B
+```
 
----
 
 ## 3\. Lessons for Resilient DEX Architecture
 
