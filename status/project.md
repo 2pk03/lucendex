@@ -51,15 +51,14 @@
 
 ### Infrastructure
 
-| Component | Specs | Status | Monthly Cost |
-|-----------|-------|--------|--------------|
-| Data Services VM | 6 vCPU / 16GB RAM / 320GB SSD | ✅ Deployed | $96 |
-| - rippled API | (40GB RAM, 256 ledgers) | ✅ Running | $0 |
-| - PostgreSQL 15 | (5GB RAM) | ✅ Running | $0 |
-| - Router | (3GB RAM) | ✅ Running | $0 |
-| - Indexer | (1GB RAM) | ✅ Running | $0 |
-
-**M0 Total Cost:** ~$96/month (combined node vs separate)
+| Component | Specs | Status |
+|-----------|-------|--------|
+| Data Services VM | 16 vCPU / 64GB RAM / 400GB SSD | ✅ Deployed |
+| - rippled API | (40GB RAM, 8 CPUs, 256 ledgers) | ✅ Running |
+| - PostgreSQL 15 | (5GB RAM) | ✅ Running |
+| - Router | (3GB RAM) | ✅ Running |
+| - Indexer | (1GB RAM) | ✅ Running |
+| - System Buffer | (~15GB RAM free for cache/overhead) | - |
 
 ### Timeline
 - **Week 1 (2025-10-31)**: ✅ Development Complete
@@ -319,9 +318,9 @@ Per zero-trust architecture requirements:
 
 ### Infrastructure
 
-| Component | Specs | Status | Monthly Cost |
-|-----------|-------|--------|--------------|
-| Validator | 4 vCPU / 8GB RAM / 160GB SSD | ✅ Deployed | $48 |
+| Component | Specs | Status |
+|-----------|-------|--------|
+| Validator | 4 vCPU / 8GB RAM / 160GB SSD | ✅ Deployed |
 
 **Current Status:**
 - Public Key: `n9LNh1zyyKdvhgu3npf4rFMHnsEXQy1q7iQEA3gcgn7WCTtQkePR`
@@ -356,32 +355,7 @@ Per zero-trust architecture requirements:
 
 ---
 
-## 💰 Cost Breakdown
-
-### Current Monthly Costs
-
-| Component | Cost | Status |
-|-----------|------|--------|
-| Validator | $48 | ✅ Syncing |
-| Data Services | $96 | ✅ Deployed & Syncing |
-| **Total** | **$144** | **M0 Active** |
-
-
-### Full Stack Costs (M0-M5)
-
-| Component | Cost | Milestone |
-|-----------|------|-----------|
-| Validator | $48 | M4 |
-| API Node + Backend + DB | $48 | M0 |
-| History Node | $96 | M0 |
-| Monitoring (Prometheus/Grafana) | $12 | M1 |
-| Object Storage (backups/logs) | $10 | M2 |
-| CDN/Edge (Cloudflare) | $0-20 | M2 |
-| **Total** | **$214-234** | **Full Production** |
-
----
-
-## 📊 Key Metrics
+##  Key Metrics
 
 ### Infrastructure
 - **Servers Deployed:** 2/2 (Validator syncing, Data Services syncing)
