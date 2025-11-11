@@ -1,4 +1,4 @@
-# LucenDEX - Project Status Dashboard
+# Lucendex DEX - Project Status Dashboard
 
 **Last Updated:** 2025-11-11  
 **Current Milestone:** M1 (Router + Quote Engine)  
@@ -26,8 +26,7 @@
 ### Deliverables
 
 - [x] Terraform infrastructure (data-services VM)
-- [x] rippled API Node configuration
-- [x] rippled Full-History Node configuration
+- [x] rippled API Node configuration (256 ledger history)
 - [x] PostgreSQL database configuration
 - [x] Database schema (amm_pools, orderbook_state, ledger_checkpoints)
 - [x] Go WebSocket client (fully tested - 59.6% coverage)
@@ -55,9 +54,10 @@
 | Component | Specs | Status | Monthly Cost |
 |-----------|-------|--------|--------------|
 | Data Services VM | 6 vCPU / 16GB RAM / 320GB SSD | ✅ Deployed | $96 |
-| - rippled API | (shares VM) | 🔄 Syncing | $0 |
-| - rippled History | (shares VM) | 🔄 Syncing | $0 |
-| - PostgreSQL 15 | (shares VM) | ✅ Running | $0 |
+| - rippled API | (40GB RAM, 256 ledgers) | ✅ Running | $0 |
+| - PostgreSQL 15 | (5GB RAM) | ✅ Running | $0 |
+| - Router | (3GB RAM) | ✅ Running | $0 |
+| - Indexer | (1GB RAM) | ✅ Running | $0 |
 
 **M0 Total Cost:** ~$96/month (combined node vs separate)
 
