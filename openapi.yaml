@@ -1,0 +1,419 @@
+openapi: 3.0.3
+info:
+  title: Lucendex Partner API
+  description: |
+    Non-custodial, deterministic routing API for XRPL decentralized exchange.
+    
+    ## Authentication
+    
+    All requests require Ed25519 request signing with these headers:
+    - `X-Partner-Id`: Your partner UUID
+    - `X-Request-Id`: Unique UUID per request (replay protection)
+    - `X-Timestamp`: RFC3339 timestamp (max 60s drift)
+    - `X-Signature`: base64(Ed25519.Sign(canonical_request))
+    
+    **Canonical Request Format:**
+    ```
+    METHOD + "\n" + PATH + "\n" + QUERY + "\n" + SHA256(BODY) + "\n" + TIMESTAMP
+    ```
+    
+    ## Rate Limits
+    
+    | Plan       | Requests/Minute |
+    |------------|-----------------|
+    | Free       | 100             |
+    | Pro        | 1,000           |
+    | Enterprise | 10,000          |
+    
+    ## Self-Hosting
+    
+    This API can be self-hosted. Partner creation requires database access or our commercial onboarding service.
+    
+  version: 1.0.0
+  contact:
+    name: Lucendex Support
+    email: partners@lucendex.com
+    url: https://lucendex.com
+  license:
+    name: MIT
+    url: https://github.com/lucendex/lucendex/blob/main/LICENSE
+
+servers:
+  - url: https://api.lucendex.com
+    description: Production (commercial hosted service)
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: quotes
+    description: Quote generation and routing
+  - name: pairs
+    description: Available trading pairs
+  - name: usage
+    description: Usage metrics and billing
+  - name: health
+    description: System health monitoring
+
+paths:
+  /partner/v1/quote:
+    post:
+      tags:
+        - quotes
+      summary: Generate deterministic quote
+      description: |
+        Generates a deterministic quote with QuoteHash binding.
+        The QuoteHash must be included in the XRPL transaction memo for tracking.
+      security:
+        - Ed25519: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+            examples:
+              xrp-to-usd:
+                value:
+                  in: "XRP"
+                  out: "USD.rIssuerAddress"
+                  amount: "100"
+      responses:
+        '200':
+          description: Quote generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /partner/v1/pairs:
+    get:
+      tags:
+        - pairs
+      summary: List available trading pairs
+      description: Returns all available trading pairs with liquidity metrics
+      security:
+        - Ed25519: []
+      responses:
+        '200':
+          description: List of trading pairs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PairsResponse'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /partner/v1/usage:
+    get:
+      tags:
+        - usage
+      summary: Get usage metrics
+      description: Returns usage metrics for billing period
+      security:
+        - Ed25519: []
+      parameters:
+        - name: month
+          in: query
+          description: Month in YYYY-MM format
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+            example: "2025-11"
+      responses:
+        '200':
+          description: Usage metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageResponse'
+        '400':
+          description: Invalid month format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /partner/v1/health:
+    get:
+      tags:
+        - health
+      summary: System health check
+      description: Returns system health metrics (indexer lag, cache stats, etc.)
+      security:
+        - Ed25519: []
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    Ed25519:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: |
+        Ed25519 signature of canonical request.
+        
+        Required headers:
+        - X-Partner-Id: Partner UUID
+        - X-Request-Id: Unique request UUID
+        - X-Timestamp: RFC3339 timestamp
+        - X-Signature: base64(Ed25519.Sign(canonical_request))
+
+  schemas:
+    QuoteRequest:
+      type: object
+      required:
+        - in
+        - out
+        - amount
+      properties:
+        in:
+          type: string
+          description: Input asset (XRP or CURRENCY.ISSUER)
+          example: "XRP"
+        out:
+          type: string
+          description: Output asset (XRP or CURRENCY.ISSUER)
+          example: "USD.rN7n7otQDd6FczFgLdSqtcsAUxDkw6fzRH"
+        amount:
+          type: string
+          description: Amount to swap (decimal string)
+          example: "100"
+
+    QuoteResponse:
+      type: object
+      properties:
+        quote_hash:
+          type: string
+          description: Deterministic quote hash (hex)
+          example: "a1b2c3d4e5f6..."
+        route:
+          $ref: '#/components/schemas/Route'
+        amount_out:
+          type: string
+          description: Expected output amount
+          example: "50.12"
+        price:
+          type: string
+          description: Exchange rate
+          example: "0.5012"
+        fees:
+          $ref: '#/components/schemas/Fees'
+        ledger_index:
+          type: integer
+          description: Current ledger index
+          example: 89123456
+        ttl_ledgers:
+          type: integer
+          description: Quote validity in ledgers
+          example: 100
+        expires_at:
+          type: string
+          format: date-time
+          description: Quote expiration time
+          example: "2025-11-13T08:35:00Z"
+
+    Route:
+      type: object
+      properties:
+        hops:
+          type: array
+          items:
+            $ref: '#/components/schemas/Hop'
+        price_impact:
+          type: string
+          description: Price impact percentage
+          example: "0.0025"
+
+    Hop:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [amm, orderbook]
+          description: Hop type
+        in:
+          type: string
+          description: Input asset
+        out:
+          type: string
+          description: Output asset
+        amount_in:
+          type: string
+          description: Amount in
+        amount_out:
+          type: string
+          description: Amount out
+
+    Fees:
+      type: object
+      properties:
+        router_bps:
+          type: integer
+          description: Router fee in basis points
+          example: 20
+        trading_fees:
+          type: string
+          description: Trading fees percentage
+          example: "0.003"
+        est_out_fee:
+          type: string
+          description: Estimated output fee
+          example: "0.00"
+
+    PairsResponse:
+      type: object
+      properties:
+        pairs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TradingPair'
+
+    TradingPair:
+      type: object
+      properties:
+        in:
+          type: string
+          description: Input asset
+        out:
+          type: string
+          description: Output asset
+        liquidity:
+          type: string
+          description: Available liquidity
+        avg_spread:
+          type: string
+          description: Average spread
+        daily_volume:
+          type: string
+          description: 24h volume
+
+    UsageResponse:
+      type: object
+      properties:
+        month:
+          type: string
+          description: Billing month (YYYY-MM)
+          example: "2025-11"
+        tx_count:
+          type: integer
+          description: Number of transactions
+          example: 42
+        total_volume:
+          type: string
+          description: Total trading volume
+          example: "1250.50"
+        total_fees:
+          type: string
+          description: Total fees owed (USD)
+          example: "2.50"
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageDetail'
+
+    UsageDetail:
+      type: object
+      properties:
+        quote_hash:
+          type: string
+        pair:
+          type: string
+        amount_in:
+          type: string
+        amount_out:
+          type: string
+        fee_amount:
+          type: string
+        tx_hash:
+          type: string
+        ledger_index:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+          description: Overall system status
+        indexer_lag:
+          type: integer
+          description: Indexer lag in ledgers
+          example: 2
+        last_ledger_index:
+          type: integer
+          description: Last processed ledger
+          example: 89123456
+        quote_cache_hits:
+          type: integer
+          description: Cache hit count
+        quote_cache_misses:
+          type: integer
+          description: Cache miss count
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code (optional)
+        details:
+          type: string
+          description: Additional details (optional)

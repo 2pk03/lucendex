@@ -1,0 +1,90 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Go
+*.test
+*.out
+vendor/
+go.work
+
+# Test coverage
+coverage.out
+*.coverprofile
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Secrets
+secrets/
+*.key
+*.pem
+*.crt
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Node (if React frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+build/
+dist/
+out/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Infrastructure (Terraform & secrets)
+infra/*/terraform/.terraform/
+infra/*/terraform/.terraform.lock.hcl
+infra/*/terraform/*.tfstate
+infra/*/terraform/*.tfstate.backup
+infra/*/terraform/tfplan
+infra/*/terraform/.envrc
+infra/*/terraform/*_ssh_key
+infra/*/terraform/*_ssh_key.pub
+infra/*/backups/
+infra/*/.envrc.cloudflare
+infra/*/lucendex-validator-verification/
+
+# Validator keys and tokens
+*.key
+*.token
+validator-keys.json
+backend/indexer
+backend/router
+backend/api
+backend/partner-admin
+
+# Open source export (tooling only, not for git)
+open-source/

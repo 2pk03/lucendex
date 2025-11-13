@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    - name: Download dependencies
+      working-directory: ./backend
+      run: go mod download
+
+    - name: Build API
+      working-directory: ./backend
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        mkdir -p ../dist
+        go build -o ../dist/api-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/api
+
+    - name: Build Indexer
+      working-directory: ./backend
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        go build -o ../dist/indexer-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/indexer
+
+    - name: Build Router
+      working-directory: ./backend
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        go build -o ../dist/router-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/router
+
+    - name: Create checksums
+      run: |
+        cd dist
+        sha256sum * > checksums.txt
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/*
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist-all
+
+    - name: Prepare release assets
+      run: |
+        mkdir -p release
+        find dist-all -type f -exec cp {} release/ \;
+        cd release && sha256sum * > checksums.txt
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release/*
+        body: |
+          ## Lucendex ${{ github.ref_name }}
+          
+          Non-custodial, deterministic routing engine for XRPL.
+          
+          ### Downloads
+          
+          **Linux:**
+          - `api-linux-amd64` - API server
+          - `indexer-linux-amd64` - XRPL indexer
+          - `router-linux-amd64` - Standalone router
+          
+          **macOS:**
+          - `api-darwin-amd64` - API server (Intel)
+          - `api-darwin-arm64` - API server (Apple Silicon)
+          - `indexer-darwin-amd64` - Indexer (Intel)
+          - `indexer-darwin-arm64` - Indexer (Apple Silicon)
+          
+          **Windows:**
+          - `api-windows-amd64.exe` - API server
+          - `indexer-windows-amd64.exe` - Indexer
+          
+          ### Verification
+          
+          ```bash
+          sha256sum -c checksums.txt
+          ```
+          
+          ### Documentation
+          
+          - [Architecture](https://github.com/lucendex/lucendex/blob/main/doc/architecture.md)
+          - [Security](https://github.com/lucendex/lucendex/blob/main/doc/security.md)
+          - [API Docs](https://github.com/lucendex/lucendex/blob/main/openapi.yaml)
+        draft: false
+        prerelease: false
