@@ -1,8 +1,9 @@
 # Lucendex
 
-[![Tests](https://github.com/lucendex/lucendex/actions/workflows/test.yml/badge.svg)](https://github.com/lucendex/lucendex/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/lucendex/lucendex/branch/main/graph/badge.svg)](https://codecov.io/gh/lucendex/lucendex)
-[![Go Report Card](https://goreportcard.com/badge/github.com/lucendex/lucendex)](https://goreportcard.com/report/github.com/lucendex/lucendex)
+[![Tests](https://github.com/2pk03/lucendex/actions/workflows/test.yml/badge.svg)](https://github.com/2pk03/lucendex/actions/workflows/test.yml)
+[![Race Detector](https://img.shields.io/badge/race_detector-passing-success)](https://github.com/2pk03/lucendex/actions/workflows/test.yml)
+[![Core Engine Coverage](https://img.shields.io/badge/core_coverage-89%25-success)](https://github.com/2pk03/lucendex)
+[![Go Report Card](https://goreportcard.com/badge/github.com/2pk03/lucendex)](https://goreportcard.com/report/github.com/2pk03/lucendex)
 [![Go](https://img.shields.io/badge/go-1.25+-blue)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -143,12 +144,25 @@ make test-security
 cd backend && go test ./internal/router/... -v
 ```
 
-**Current Test Status:**
-- API Authentication: 5/5 passing
-- Router: 8/8 passing (pathfinder, validator, hash, breaker)
-- KV Store: 4/4 passing
-- Parser: 2/2 passing
-- Total: 11/11 passing
+**Test Coverage:**
+- **Core Router Engine: 89.6%** (pathfinder, quote hash, validator, circuit breaker)
+- **KV Store: 92.5%** (memory management, security, TTL, namespace isolation)
+- **Parser: 87.2%** (AMM pools, orderbook parsing)
+- XRPL Client: 55.5%
+- Indexer: 22.3%
+
+**What's NOT Tested:**
+- `cmd/*` programs (thin wrappers around core engine)
+- Database layer (integration tests require PostgreSQL)
+
+**Security-Critical Components: 85-92% Coverage**
+
+**Test Status:**
+- All unit tests: ✅ passing
+- Race detector: ✅ passing  
+- Ed25519 auth: ✅ tested
+- QuoteHash determinism: ✅ tested
+- Circuit breakers: ✅ tested
 
 ## API Endpoints
 

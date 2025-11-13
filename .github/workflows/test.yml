@@ -75,4 +75,4 @@ jobs:
       working-directory: ./backend
       run: |
         go test ./internal/api/... -v
-        go test ./internal/router/validator_test.go -v
+        go test ./internal/router/... -v
