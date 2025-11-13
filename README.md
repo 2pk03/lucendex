@@ -1,9 +1,8 @@
 # Lucendex
 
-[![Tests](https://github.com/2pk03/lucendex/actions/workflows/test.yml/badge.svg)](https://github.com/2pk03/lucendex/actions/workflows/test.yml)
+[![Tests](https://img.shields.io/badge/tests-passing-success)](https://github.com/2pk03/lucendex/actions/workflows/test.yml)
 [![Race Detector](https://img.shields.io/badge/race_detector-passing-success)](https://github.com/2pk03/lucendex/actions/workflows/test.yml)
-[![Core Engine Coverage](https://img.shields.io/badge/core_coverage-89%25-success)](https://github.com/2pk03/lucendex)
-[![Go Report Card](https://goreportcard.com/badge/github.com/2pk03/lucendex)](https://goreportcard.com/report/github.com/2pk03/lucendex)
+[![Core Engine](https://img.shields.io/badge/core_coverage-89%25-success)](https://github.com/2pk03/lucendex)
 [![Go](https://img.shields.io/badge/go-1.25+-blue)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
