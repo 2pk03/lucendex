@@ -1,8 +1,8 @@
 # Lucendex
 
-[![Tests](https://img.shields.io/badge/tests-11%2F11_passing-success)](https://github.com/lucendex/lucendex)
-[![Coverage](https://img.shields.io/badge/coverage-90%25-success)](https://github.com/lucendex/lucendex)
-[![Security](https://img.shields.io/badge/security_tests-passing-success)](https://github.com/lucendex/lucendex)
+[![Tests](https://github.com/lucendex/lucendex/actions/workflows/test.yml/badge.svg)](https://github.com/lucendex/lucendex/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/lucendex/lucendex/branch/main/graph/badge.svg)](https://codecov.io/gh/lucendex/lucendex)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lucendex/lucendex)](https://goreportcard.com/report/github.com/lucendex/lucendex)
 [![Go](https://img.shields.io/badge/go-1.25+-blue)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -207,7 +207,7 @@ Don't want to self-host? Use our managed infrastructure:
 - **Compliance assistance** for regulated entities
 - **Volume pricing** for high-throughput integrators
 
-Contact: partners@lucendex.com
+Contact: hello@lucendex.com
 
 ## Contributing
 
@@ -229,6 +229,5 @@ We welcome:
 ## Links
 
 - **Website**: https://lucendex.com
-- **Documentation**: https://docs.lucendex.com
-- **API Status**: https://status.lucendex.com
+- **Documentation**: https://lucendex.com/docs
 - **XRPL**: https://xrpl.org

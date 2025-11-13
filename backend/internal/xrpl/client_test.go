@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -223,10 +224,13 @@ func TestClient_LedgerCallback(t *testing.T) {
 	client := NewClient(server.URL())
 	defer client.Close()
 	
-	// Set up callback
+	// Set up callback with proper synchronization
+	var mu sync.Mutex
 	called := false
 	var receivedLedger *LedgerResponse
 	client.OnLedger(func(lr *LedgerResponse) {
+		mu.Lock()
+		defer mu.Unlock()
 		called = true
 		receivedLedger = lr
 	})
@@ -237,6 +241,9 @@ func TestClient_LedgerCallback(t *testing.T) {
 	
 	// Wait for callback
 	time.Sleep(200 * time.Millisecond)
+	
+	mu.Lock()
+	defer mu.Unlock()
 	
 	if !called {
 		t.Error("OnLedger callback was not called")
@@ -312,10 +319,13 @@ func TestClient_ErrorCallback(t *testing.T) {
 	client := NewClient(server.URL())
 	defer client.Close()
 	
-	// Set up error callback
+	// Set up error callback with proper synchronization
+	var mu sync.Mutex
 	errorCalled := false
 	var receivedError error
 	client.OnError(func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
 		errorCalled = true
 		receivedError = err
 	})
@@ -329,6 +339,9 @@ func TestClient_ErrorCallback(t *testing.T) {
 	
 	// Wait for error callback
 	time.Sleep(200 * time.Millisecond)
+	
+	mu.Lock()
+	defer mu.Unlock()
 	
 	if !errorCalled {
 		t.Error("OnError callback was not called")

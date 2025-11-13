@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	DefaultMaxBytes      = 512 * 1024 * 1024
-	DefaultMaxKeyLength  = 256
-	DefaultMaxValueSize  = 1024 * 1024
+	DefaultMaxBytes        = 512 * 1024 * 1024
+	DefaultMaxKeyLength    = 256
+	DefaultMaxValueSize    = 1024 * 1024
 	DefaultCleanupInterval = 60 * time.Second
-	
-	NamespaceQuotes        = "quotes"
-	NamespaceRateLimits    = "rate_limits"
+
+	NamespaceQuotes         = "quotes"
+	NamespaceRateLimits     = "rate_limits"
 	NamespaceCircuitBreaker = "circuit_breaker"
 )
 
