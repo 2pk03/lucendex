@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/lucendex/backend/internal/parser"
 	"github.com/lucendex/backend/internal/store"
@@ -18,18 +22,24 @@ import (
 
 var (
 	// Set at build time via -ldflags
-	version = "dev"
+	version   = "dev"
 	buildTime = "unknown"
 )
 
 var (
-	rippledWS   = flag.String("rippled-ws", getEnv("RIPPLED_WS", "ws://localhost:6006"), "rippled Full-History WebSocket URL")
-	rippledHTTP = flag.String("rippled-http", getEnv("RIPPLED_HTTP", "http://localhost:51237"), "rippled HTTP RPC URL for gap detection")
-	dbConnStr   = flag.String("db", getEnv("DATABASE_URL", ""), "PostgreSQL connection string")
-	verbose     = flag.Bool("v", getEnv("VERBOSE", "") == "true", "Enable verbose logging")
-	showVersion = flag.Bool("version", false, "Show version and exit")
-	startLedger = flag.Uint64("start-ledger", 99984580, "Earliest ledger to index (Nov 1, 2025 00:00 UTC ≈ ledger 99984580)")
+	rippledWS         = flag.String("rippled-ws", getEnv("RIPPLED_WS", "ws://localhost:6006"), "rippled Full-History WebSocket URL")
+	rippledHTTP       = flag.String("rippled-http", getEnv("RIPPLED_HTTP", "http://localhost:51237"), "rippled HTTP RPC URL for gap detection")
+	dbConnStr         = flag.String("db", getEnv("DATABASE_URL", ""), "PostgreSQL connection string")
+	verbose           = flag.Bool("v", getEnv("VERBOSE", "") == "true", "Enable verbose logging")
+	showVersion       = flag.Bool("version", false, "Show version and exit")
+	startLedger       = flag.Uint64("start-ledger", 99984580, "Earliest ledger to index (Nov 1, 2025 00:00 UTC ≈ ledger 99984580)")
+	ledgerUpdateURL   = flag.String("ledger-update-url", getEnv("LEDGER_UPDATE_URL", ""), "Internal URL to POST ledger index updates")
+	ledgerUpdateToken = flag.String("ledger-update-token", getEnv("LEDGER_UPDATE_TOKEN", ""), "Token for ledger update endpoint")
 )
+
+var httpClient = &http.Client{
+	Timeout: 3 * time.Second,
+}
 
 // getEnv retrieves environment variable or returns default
 func getEnv(key, defaultValue string) string {
@@ -61,23 +71,23 @@ func logError(format string, v ...interface{}) {
 
 func main() {
 	flag.Parse()
-	
+
 	// Set log output to stdout (stderr only for Fatal errors)
 	log.SetOutput(os.Stdout)
-	
+
 	if *showVersion {
 		log.Printf("lucendex-indexer, build %s", buildTime)
 		return
 	}
-	
+
 	log.Printf("lucendex-indexer, build %s", buildTime)
 	log.Printf("Rippled WS: %s", *rippledWS)
-	
+
 	// Validate required configuration
 	if *dbConnStr == "" {
 		log.Fatal("DATABASE_URL environment variable or -db flag is required")
 	}
-	
+
 	// Connect to database with retry logic
 	log.Printf("Connecting to database...")
 	var db *store.Store
@@ -108,14 +118,14 @@ func main() {
 	}
 	defer db.Close()
 	log.Printf("✓ Database connected")
-	
+
 	// Check for last checkpoint
 	ctx := context.Background()
 	checkpoint, err := db.GetLastCheckpoint(ctx)
 	if err != nil {
 		log.Fatalf("Failed to get last checkpoint: %v", err)
 	}
-	
+
 	// Get current ledger via HTTP RPC (before WebSocket to avoid conflict)
 	httpStart := time.Now()
 	db.LogConnectionEvent("rippled-http", "attempt", 1, nil, 0, map[string]interface{}{"url": *rippledHTTP})
@@ -127,17 +137,17 @@ func main() {
 	} else {
 		db.LogConnectionEvent("rippled-http", "success", 1, nil, int(time.Since(httpStart).Milliseconds()), map[string]interface{}{"url": *rippledHTTP})
 	}
-	
+
 	var currentLedger uint64
 	if serverInfo != nil {
 		currentLedger = serverInfo.Result.Info.ValidatedLedger.Seq
 		log.Printf("Current validated ledger: %d", currentLedger)
 	}
-	
+
 	// Connect to rippled WebSocket
 	log.Printf("Connecting to rippled...")
 	client := xrpl.NewClient(*rippledWS)
-	
+
 	wsStart := time.Now()
 	db.LogConnectionEvent("rippled-ws", "attempt", 1, nil, 0, map[string]interface{}{"url": *rippledWS})
 	if err := client.Connect(); err != nil {
@@ -147,24 +157,24 @@ func main() {
 	db.LogConnectionEvent("rippled-ws", "success", 1, nil, int(time.Since(wsStart).Milliseconds()), map[string]interface{}{"url": *rippledWS})
 	defer client.Close()
 	log.Printf("✓ Connected to rippled")
-	
+
 	// Subscribe to ledger stream
 	if err := client.Subscribe(); err != nil {
 		log.Fatalf("Failed to subscribe to ledger stream: %v", err)
 	}
 	log.Printf("✓ Subscribed to ledger stream")
-	
+
 	// Detect gap and backfill if needed
 	if checkpoint != nil && currentLedger > 0 {
 		gap := currentLedger - uint64(checkpoint.LedgerIndex)
 		if gap > 1 {
 			const historyRetention = 2048 // History node retention
 			missingCount := gap - 1
-			
+
 			if missingCount <= historyRetention {
 				log.Printf("⚠ Gap detected: %d ledgers (within history)", missingCount)
 				log.Printf("Starting background backfill...")
-				
+
 				// Backfill in background
 				go func() {
 					backfillClient := xrpl.NewClientWithBuffer(*rippledWS, 10000)
@@ -173,23 +183,23 @@ func main() {
 						return
 					}
 					defer backfillClient.Close()
-					
+
 					for i := uint64(checkpoint.LedgerIndex + 1); i < currentLedger; i++ {
 						ledger, err := backfillClient.FetchLedgerSync(i)
 						if err != nil {
 							log.Printf("Failed to backfill ledger %d: %v", i, err)
 							continue
 						}
-						
+
 						if err := processLedger(ctx, db, ledger, parser.NewAMMParser(), parser.NewOrderbookParser()); err != nil {
 							log.Printf("Error processing backfill ledger %d: %v", i, err)
 						}
-						
+
 						if i%100 == 0 {
 							log.Printf("Backfill progress: %d/%d ledgers", i-uint64(checkpoint.LedgerIndex), missingCount)
 						}
 					}
-					
+
 					log.Printf("✓ Backfill complete: %d ledgers", missingCount)
 				}()
 			} else {
@@ -204,30 +214,32 @@ func main() {
 	} else {
 		log.Printf("No checkpoint found - starting fresh")
 	}
-	
+
 	// Create parsers for live processing
 	ammParser := parser.NewAMMParser()
 	orderbookParser := parser.NewOrderbookParser()
-	
+
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	log.Printf("✓ Indexer running - waiting for ledgers...")
-	
+
 	// Main processing loop
 	for {
 		select {
 		case <-sigChan:
 			log.Printf("Shutdown signal received - closing gracefully")
 			return
-			
+
 		case err := <-client.ErrorChan():
 			log.Printf("Error from rippled client: %v", err)
-			
+
 		case ledger := <-client.LedgerChan():
 			if err := processLedger(ctx, db, ledger, ammParser, orderbookParser); err != nil {
 				log.Printf("Error processing ledger %d: %v", ledger.LedgerIndex, err)
+			} else {
+				publishLedgerIndex(uint64(ledger.LedgerIndex))
 			}
 		}
 	}
@@ -239,18 +251,18 @@ func hasLucendexQuoteHash(tx map[string]interface{}) ([]byte, bool) {
 	if !ok || len(memos) == 0 {
 		return nil, false
 	}
-	
+
 	for _, memo := range memos {
 		memoObj, ok := memo.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		
+
 		memoWrapper, ok := memoObj["Memo"].(map[string]interface{})
 		if !ok {
 			continue
 		}
-		
+
 		// Look for MemoType = "lucendex/quote" (hex encoded)
 		memoType, ok := memoWrapper["MemoType"].(string)
 		if ok && memoType == "6c7563656e6465782f71756f7465" { // "lucendex/quote" in hex
@@ -266,7 +278,7 @@ func hasLucendexQuoteHash(tx map[string]interface{}) ([]byte, bool) {
 			}
 		}
 	}
-	
+
 	return nil, false
 }
 
@@ -277,7 +289,7 @@ func extractTradeDetails(tx map[string]interface{}) (inAsset, outAsset, amountIn
 	if !accountOk {
 		return
 	}
-	
+
 	// Get Amount (what was sent)
 	amount, amountOk := tx["Amount"].(map[string]interface{})
 	if !amountOk {
@@ -297,13 +309,13 @@ func extractTradeDetails(tx map[string]interface{}) (inAsset, outAsset, amountIn
 		inAsset = fmt.Sprintf("%s.%s", currency, issuer)
 		amountIn = value
 	}
-	
+
 	// Get DeliveredAmount from metadata (what was received)
 	meta, metaOk := tx["meta"].(map[string]interface{})
 	if !metaOk {
 		return
 	}
-	
+
 	delivered := meta["delivered_amount"]
 	if delivered == nil {
 		// Try DeliverMax
@@ -312,7 +324,7 @@ func extractTradeDetails(tx map[string]interface{}) (inAsset, outAsset, amountIn
 			return
 		}
 	}
-	
+
 	if deliveredStr, isString := delivered.(string); isString {
 		// Simple XRP
 		outAsset = "XRP"
@@ -327,10 +339,52 @@ func extractTradeDetails(tx map[string]interface{}) (inAsset, outAsset, amountIn
 	} else {
 		return
 	}
-	
+
 	_ = account // Unused for now, but we have it
 	ok = true
 	return
+}
+
+func publishLedgerIndex(idx uint64) {
+	if *ledgerUpdateURL == "" {
+		return
+	}
+
+	payload := map[string]uint64{
+		"ledger_index": idx,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Failed to marshal ledger update payload: %v", err)
+		return
+	}
+
+	req, err := http.NewRequest("POST", *ledgerUpdateURL, bytes.NewReader(body))
+	if err != nil {
+		log.Printf("Failed to create ledger update request: %v", err)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if *ledgerUpdateToken != "" {
+		req.Header.Set("X-Internal-Token", *ledgerUpdateToken)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req = req.WithContext(ctx)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("Ledger update request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		log.Printf("Ledger update endpoint returned status %d", resp.StatusCode)
+	}
 }
 
 // processLedger processes a single ledger
@@ -342,14 +396,14 @@ func processLedger(
 	orderbookParser *parser.OrderbookParser,
 ) error {
 	start := time.Now()
-	
+
 	// Check if ledger already processed (duplicate prevention)
 	existingCheckpoint, err := db.GetCheckpoint(ctx, int64(ledger.LedgerIndex))
 	if err == nil && existingCheckpoint != nil {
 		logVerbose("Skipping already processed ledger %d", ledger.LedgerIndex)
 		return nil
 	}
-	
+
 	// Verify ledger hash continuity (detect forks/corruption)
 	if ledger.LedgerIndex > 1 {
 		prevCheckpoint, err := db.GetCheckpoint(ctx, int64(ledger.LedgerIndex-1))
@@ -360,14 +414,14 @@ func processLedger(
 			logVerbose("Verified sequential ledger: %d follows %d", ledger.LedgerIndex, prevCheckpoint.LedgerIndex)
 		}
 	}
-	
-	log.Printf("Processing ledger %d (hash: %s, txns: %d)", 
+
+	log.Printf("Processing ledger %d (hash: %s, txns: %d)",
 		ledger.LedgerIndex, ledger.LedgerHash, ledger.TxnCount)
-	
+
 	// Process each transaction
 	for _, tx := range ledger.Transactions {
 		logVerbose("Processing tx %s (type: %s)", tx.Hash, tx.TransactionType)
-		
+
 		// Convert transaction to map for parser
 		txMap := make(map[string]interface{})
 		txBytes, err := json.Marshal(tx)
@@ -375,12 +429,12 @@ func processLedger(
 			log.Printf("Failed to marshal transaction: %v", err)
 			continue
 		}
-		
+
 		if err := json.Unmarshal(txBytes, &txMap); err != nil {
 			log.Printf("Failed to unmarshal transaction: %v", err)
 			continue
 		}
-		
+
 		// Try AMM parser
 		pool, err := ammParser.ParseTransaction(txMap, ledger.LedgerIndex, ledger.LedgerHash)
 		if err != nil {
@@ -394,7 +448,7 @@ func processLedger(
 		} else {
 			logVerbose("  Skipped (not AMM transaction)")
 		}
-		
+
 		// Try orderbook parser
 		offer, err := orderbookParser.ParseTransaction(txMap, ledger.LedgerIndex, ledger.LedgerHash)
 		if err != nil {
@@ -412,35 +466,86 @@ func processLedger(
 		} else {
 			logVerbose("  Skipped (not orderbook transaction)")
 		}
-		
+
 		// Check for Lucendex-executed trade
 		if quoteHash, hasQuote := hasLucendexQuoteHash(txMap); hasQuote {
-			// Extract trade details
 			inAsset, outAsset, amountIn, amountOut, valid := extractTradeDetails(txMap)
-			if valid {
-				trade := &store.CompletedTrade{
-					QuoteHash:    quoteHash,
-					TxHash:       tx.Hash,
-					Account:      tx.Account,
-					InAsset:      inAsset,
-					OutAsset:     outAsset,
-					AmountIn:     amountIn,
-					AmountOut:    amountOut,
-					Route:        map[string]interface{}{"type": "unknown"}, // Route extraction TBD
-					RouterFeeBps: 20, // Default, should extract from tx
-					LedgerIndex:  int64(ledger.LedgerIndex),
-					LedgerHash:   ledger.LedgerHash,
-				}
-				
-				if err := db.InsertCompletedTrade(ctx, trade); err != nil {
-					log.Printf("Failed to insert completed trade: %v", err)
-				} else {
-					log.Printf("  ✓ Lucendex trade recorded: %s→%s (quote: %x...)", 
-						inAsset, outAsset, quoteHash[:4])
+			if !valid {
+				continue
+			}
+
+			entry, err := db.GetQuoteRegistryEntry(ctx, quoteHash)
+			if err != nil {
+				log.Printf("Failed to lookup quote registry: %v", err)
+				continue
+			}
+			if entry == nil {
+				logVerbose("Unknown quote hash %x", quoteHash[:4])
+				continue
+			}
+
+			var routeMeta map[string]interface{}
+			if len(entry.Route) > 0 {
+				if err := json.Unmarshal(entry.Route, &routeMeta); err != nil {
+					routeMeta = map[string]interface{}{"error": "invalid_route"}
 				}
 			}
+			if routeMeta == nil {
+				routeMeta = map[string]interface{}{}
+			}
+
+			routerFee := entry.RouterBps
+			if routerFee == 0 {
+				routerFee = 20
+			}
+
+			trade := &store.CompletedTrade{
+				QuoteHash:    quoteHash,
+				TxHash:       tx.Hash,
+				Account:      tx.Account,
+				InAsset:      inAsset,
+				OutAsset:     outAsset,
+				AmountIn:     amountIn,
+				AmountOut:    amountOut,
+				Route:        routeMeta,
+				RouterFeeBps: routerFee,
+				LedgerIndex:  int64(ledger.LedgerIndex),
+				LedgerHash:   ledger.LedgerHash,
+			}
+
+			if err := db.InsertCompletedTrade(ctx, trade); err != nil {
+				log.Printf("Failed to insert completed trade: %v", err)
+			} else {
+				log.Printf("  ✓ Lucendex trade recorded for partner %s: %s→%s (quote: %x...)",
+					entry.PartnerID, inAsset, outAsset, quoteHash[:4])
+			}
+
+			feeAmount := decimal.Zero
+			if amountOutDec, err := decimal.NewFromString(trade.AmountOut); err == nil {
+				feeAmount = amountOutDec.Mul(decimal.NewFromInt(int64(routerFee))).Div(decimal.NewFromInt(10000))
+			}
+
+			usage := &store.UsageEvent{
+				PartnerID:   entry.PartnerID,
+				QuoteHash:   quoteHash,
+				Pair:        fmt.Sprintf("%s-%s", inAsset, outAsset),
+				AmountIn:    trade.AmountIn,
+				AmountOut:   trade.AmountOut,
+				RouterBps:   routerFee,
+				FeeAmount:   feeAmount.String(),
+				TxHash:      tx.Hash,
+				LedgerIndex: int64(ledger.LedgerIndex),
+			}
+
+			if err := db.InsertUsageEvent(ctx, usage); err != nil {
+				log.Printf("Failed to insert usage event: %v", err)
+			}
+
+			if err := db.DeleteQuoteRegistryEntry(ctx, quoteHash); err != nil {
+				log.Printf("Failed to delete quote registry entry: %v", err)
+			}
 		}
-		
+
 		// Check for OfferCancel
 		if tx.TransactionType == "OfferCancel" {
 			account, seq, err := orderbookParser.ParseOfferCancel(txMap)
@@ -455,7 +560,7 @@ func processLedger(
 			}
 		}
 	}
-	
+
 	// Save checkpoint
 	duration := time.Since(start)
 	checkpoint := &store.LedgerCheckpoint{
@@ -466,11 +571,11 @@ func processLedger(
 		TransactionCount:     ledger.TxnCount,
 		ProcessingDurationMs: int(duration.Milliseconds()),
 	}
-	
+
 	if err := db.SaveCheckpoint(ctx, checkpoint); err != nil {
 		return err
 	}
-	
+
 	log.Printf("✓ Ledger %d indexed in %v", ledger.LedgerIndex, duration)
 	return nil
 }

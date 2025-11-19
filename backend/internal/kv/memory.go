@@ -19,12 +19,14 @@ const (
 	NamespaceQuotes         = "quotes"
 	NamespaceRateLimits     = "rate_limits"
 	NamespaceCircuitBreaker = "circuit_breaker"
+	NamespaceSystem         = "system"
 )
 
 var namespaceQuotas = map[string]int64{
 	NamespaceQuotes:         10000,
 	NamespaceRateLimits:     100000,
 	NamespaceCircuitBreaker: 1000,
+	NamespaceSystem:         128,
 }
 
 type entry struct {
@@ -37,18 +39,18 @@ type entry struct {
 }
 
 type MemoryStore struct {
-	mu            sync.RWMutex
-	data          map[string]*entry
-	lru           *list.List
-	maxBytes      int64
-	currentBytes  int64
-	maxKeyLength  int
-	maxValueSize  int
-	evictions     int64
-	hits          int64
-	misses        int64
-	stopCh        chan struct{}
-	stopped       atomic.Bool
+	mu           sync.RWMutex
+	data         map[string]*entry
+	lru          *list.List
+	maxBytes     int64
+	currentBytes int64
+	maxKeyLength int
+	maxValueSize int
+	evictions    int64
+	hits         int64
+	misses       int64
+	stopCh       chan struct{}
+	stopped      atomic.Bool
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -92,7 +94,7 @@ func (s *MemoryStore) Get(namespace, key string) ([]byte, bool) {
 
 	s.lru.MoveToFront(e.lruNode)
 	atomic.AddInt64(&s.hits, 1)
-	
+
 	result := make([]byte, len(e.value))
 	copy(result, e.value)
 	return result, true
@@ -174,12 +176,12 @@ func (s *MemoryStore) IncrementRateLimit(partnerID string, ttl time.Duration) (i
 
 	fullKey := s.makeKey(NamespaceRateLimits, partnerID)
 	e, ok := s.data[fullKey]
-	
+
 	if !ok || (!e.expiresAt.IsZero() && time.Now().After(e.expiresAt)) {
 		if ok {
 			s.deleteEntryLocked(fullKey, e)
 		}
-		
+
 		if err := s.setLocked(NamespaceRateLimits, partnerID, []byte("1"), ttl); err != nil {
 			return 0, err
 		}
@@ -208,6 +210,24 @@ func (s *MemoryStore) GetQuote(hash [32]byte) ([]byte, bool) {
 func (s *MemoryStore) SetQuote(hash [32]byte, route []byte, ttl time.Duration) error {
 	key := hex.EncodeToString(hash[:])
 	return s.Set(NamespaceQuotes, key, route, ttl)
+}
+
+func (s *MemoryStore) SetLedgerIndex(idx uint32) error {
+	value := []byte(strconv.FormatUint(uint64(idx), 10))
+	return s.Set(NamespaceSystem, "ledger_index", value, 0)
+}
+
+func (s *MemoryStore) GetLedgerIndex() (uint32, bool) {
+	value, ok := s.Get(NamespaceSystem, "ledger_index")
+	if !ok {
+		return 0, false
+	}
+
+	parsed, err := strconv.ParseUint(string(value), 10, 32)
+	if err != nil {
+		return 0, false
+	}
+	return uint32(parsed), true
 }
 
 func (s *MemoryStore) Keys(namespace string) []string {

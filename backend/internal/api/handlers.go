@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -18,13 +20,15 @@ type Handlers struct {
 	router *router.Router
 	db     DB
 	kv     KVStore
+	token  string
 }
 
-func NewHandlers(r *router.Router, db DB, kv KVStore) *Handlers {
+func NewHandlers(r *router.Router, db DB, kv KVStore, token string) *Handlers {
 	return &Handlers{
 		router: r,
 		db:     db,
 		kv:     kv,
+		token:  token,
 	}
 }
 
@@ -65,8 +69,16 @@ func (h *Handlers) QuoteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to router types
-	inAsset := parseAsset(req.In)
-	outAsset := parseAsset(req.Out)
+	inAsset, err := parseAsset(req.In)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	outAsset, err := parseAsset(req.Out)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	routerReq := &router.QuoteRequest{
 		In:     inAsset,
@@ -87,8 +99,7 @@ func (h *Handlers) QuoteHandler(w http.ResponseWriter, r *http.Request) {
 	// Store quote registry for later attribution
 	expiresAt := time.Now().Add(time.Duration(quote.TTLLedgers) * 4 * time.Second)
 	if err := h.storeQuoteRegistry(ctx, quote, partnerID, partner.RouterBps, expiresAt); err != nil {
-		// Log error but don't fail - quote is still valid
-		// In production would use proper logging
+		log.Printf("failed to store quote registry for partner %s: %v", partnerID, err)
 	}
 
 	// Build response
@@ -231,8 +242,8 @@ func (h *Handlers) buildQuoteResponse(quote *router.QuoteResponse, expiresAt tim
 			Hops:        hops,
 			PriceImpact: quote.Route.PriceImpact.String(),
 		},
-		AmountOut:   quote.Out.String(),
-		Price:       quote.Price.String(),
+		AmountOut: quote.Out.String(),
+		Price:     quote.Price.String(),
 		Fees: FeesResponse{
 			RouterBps:   quote.Fees.RouterBps,
 			TradingFees: quote.Fees.TradingFees.String(),
@@ -280,18 +291,71 @@ func (h *Handlers) getCacheStats() (hits int64, misses int64) {
 	return 0, 0
 }
 
-func parseAsset(s string) router.Asset {
+// LedgerUpdateHandler handles POST /internal/v1/ledger
+func (h *Handlers) LedgerUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.token == "" {
+		writeError(w, http.StatusInternalServerError, "internal token not configured")
+		return
+	}
+	if r.Header.Get("X-Internal-Token") != h.token {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var payload struct {
+		LedgerIndex uint32 `json:"ledger_index"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if payload.LedgerIndex == 0 {
+		writeError(w, http.StatusBadRequest, "ledger_index required")
+		return
+	}
+
+	h.router.SetCurrentLedgerIndex(payload.LedgerIndex)
+	if err := h.db.UpdateNetworkLedger(r.Context(), payload.LedgerIndex); err != nil {
+		log.Printf("failed to update network ledger: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to update ledger state")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func parseAsset(s string) (router.Asset, error) {
+	if s == "" {
+		return router.Asset{}, fmt.Errorf("asset required")
+	}
 	parts := strings.Split(s, ".")
-	if len(parts) == 1 {
-		return router.Asset{
-			Currency: parts[0],
-			Issuer:   "",
+	if len(parts) > 2 {
+		return router.Asset{}, fmt.Errorf("invalid asset format")
+	}
+
+	currency := strings.TrimSpace(parts[0])
+	if currency == "" {
+		return router.Asset{}, fmt.Errorf("currency code required")
+	}
+
+	var issuer string
+	if len(parts) == 2 {
+		issuer = strings.TrimSpace(parts[1])
+		if issuer == "" {
+			return router.Asset{}, fmt.Errorf("issuer required")
 		}
 	}
+
 	return router.Asset{
-		Currency: parts[0],
-		Issuer:   parts[1],
-	}
+		Currency: currency,
+		Issuer:   issuer,
+	}, nil
 }
 
 // Additional DB interface methods needed

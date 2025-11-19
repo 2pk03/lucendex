@@ -58,9 +58,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		// Check rate limit
 		count, err := rl.kv.IncrementRateLimit(partnerID.String(), 60*time.Second)
 		if err != nil {
-			// Log error but allow request (fail open)
-			// In production, might want to fail closed
-			next.ServeHTTP(w, r)
+			writeError(w, http.StatusServiceUnavailable, "rate limiting unavailable")
 			return
 		}
 

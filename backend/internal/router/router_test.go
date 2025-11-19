@@ -50,7 +50,7 @@ func TestRouter_Quote(t *testing.T) {
 	store := &mockStore{}
 
 	qe := NewQuoteEngine(validator, pathfinder, breaker, kv, 20)
-	r := NewRouter(qe, store)
+	r := NewRouter(qe, store, kv)
 	defer r.Close()
 
 	req := &QuoteRequest{
@@ -85,7 +85,7 @@ func TestRouter_QuoteValidationFailure(t *testing.T) {
 	store := &mockStore{}
 
 	qe := NewQuoteEngine(validator, nil, nil, nil, 20)
-	r := NewRouter(qe, store)
+	r := NewRouter(qe, store, nil)
 	defer r.Close()
 
 	req := &QuoteRequest{

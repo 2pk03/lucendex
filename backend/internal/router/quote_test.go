@@ -9,7 +9,8 @@ import (
 )
 
 type mockKV struct {
-	data map[[32]byte][]byte
+	data      map[[32]byte][]byte
+	ledgerIdx uint32
 }
 
 func (m *mockKV) GetQuote(hash [32]byte) ([]byte, bool) {
@@ -23,6 +24,18 @@ func (m *mockKV) SetQuote(hash [32]byte, route []byte, ttl time.Duration) error 
 	}
 	m.data[hash] = route
 	return nil
+}
+
+func (m *mockKV) SetLedgerIndex(idx uint32) error {
+	m.ledgerIdx = idx
+	return nil
+}
+
+func (m *mockKV) GetLedgerIndex() (uint32, bool) {
+	if m.ledgerIdx == 0 {
+		return 0, false
+	}
+	return m.ledgerIdx, true
 }
 
 func TestQuoteEngine_GenerateQuote(t *testing.T) {
@@ -163,6 +176,6 @@ func TestQuoteEngine_FeeCalculation(t *testing.T) {
 	if quote.Fees.RouterBps != 20 {
 		t.Errorf("RouterBps = %d, want 20", quote.Fees.RouterBps)
 	}
-	
+
 	t.Logf("TradingFees: %s", quote.Fees.TradingFees)
 }

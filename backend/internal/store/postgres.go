@@ -21,20 +21,20 @@ func NewStore(connStr string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	
+
 	// Set connection pool settings
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
-	
+
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-	
+
 	return &Store{db: db}, nil
 }
 
@@ -74,7 +74,7 @@ func (s *Store) UpsertAMMPool(ctx context.Context, pool *AMMPool) error {
 			updated_at = now()
 		RETURNING id
 	`
-	
+
 	err := s.db.QueryRowContext(ctx, query,
 		pool.Asset1,
 		pool.Asset2,
@@ -86,11 +86,11 @@ func (s *Store) UpsertAMMPool(ctx context.Context, pool *AMMPool) error {
 		pool.LedgerIndex,
 		pool.LedgerHash,
 	).Scan(&pool.ID)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to upsert AMM pool: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -130,7 +130,7 @@ func (s *Store) UpsertOffer(ctx context.Context, offer *Offer) error {
 			updated_at = now()
 		RETURNING id
 	`
-	
+
 	// Convert Meta map to JSON
 	var metaJSON []byte
 	var err error
@@ -142,7 +142,7 @@ func (s *Store) UpsertOffer(ctx context.Context, offer *Offer) error {
 	} else {
 		metaJSON = []byte("{}")
 	}
-	
+
 	err = s.db.QueryRowContext(ctx, query,
 		offer.BaseAsset,
 		offer.QuoteAsset,
@@ -158,11 +158,11 @@ func (s *Store) UpsertOffer(ctx context.Context, offer *Offer) error {
 		offer.Status,
 		string(metaJSON),
 	).Scan(&offer.ID)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to upsert offer: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -173,21 +173,21 @@ func (s *Store) CancelOffer(ctx context.Context, ownerAccount string, offerSeque
 		SET status = 'cancelled', ledger_index = $3, updated_at = now()
 		WHERE owner_account = $1 AND offer_sequence = $2 AND status = 'active'
 	`
-	
+
 	result, err := s.db.ExecContext(ctx, query, ownerAccount, offerSequence, ledgerIndex)
 	if err != nil {
 		return fmt.Errorf("failed to cancel offer: %w", err)
 	}
-	
+
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rows == 0 {
 		return fmt.Errorf("no active offer found for account=%s sequence=%d", ownerAccount, offerSequence)
 	}
-	
+
 	return nil
 }
 
@@ -216,7 +216,7 @@ func (s *Store) SaveCheckpoint(ctx context.Context, cp *LedgerCheckpoint) error 
 			transaction_count = EXCLUDED.transaction_count,
 			processing_duration_ms = EXCLUDED.processing_duration_ms
 	`
-	
+
 	_, err := s.db.ExecContext(ctx, query,
 		cp.LedgerIndex,
 		cp.LedgerHash,
@@ -226,11 +226,11 @@ func (s *Store) SaveCheckpoint(ctx context.Context, cp *LedgerCheckpoint) error 
 		cp.TransactionCount,
 		cp.ProcessingDurationMs,
 	)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to save checkpoint: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -242,7 +242,7 @@ func (s *Store) GetLastCheckpoint(ctx context.Context) (*LedgerCheckpoint, error
 		ORDER BY ledger_index DESC
 		LIMIT 1
 	`
-	
+
 	cp := &LedgerCheckpoint{}
 	err := s.db.QueryRowContext(ctx, query).Scan(
 		&cp.LedgerIndex,
@@ -253,15 +253,15 @@ func (s *Store) GetLastCheckpoint(ctx context.Context) (*LedgerCheckpoint, error
 		&cp.TransactionCount,
 		&cp.ProcessingDurationMs,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil // No checkpoint exists yet
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get last checkpoint: %w", err)
 	}
-	
+
 	return cp, nil
 }
 
@@ -272,7 +272,7 @@ func (s *Store) GetCheckpoint(ctx context.Context, ledgerIndex int64) (*LedgerCh
 		FROM core.ledger_checkpoints
 		WHERE ledger_index = $1
 	`
-	
+
 	cp := &LedgerCheckpoint{}
 	err := s.db.QueryRowContext(ctx, query, ledgerIndex).Scan(
 		&cp.LedgerIndex,
@@ -283,15 +283,15 @@ func (s *Store) GetCheckpoint(ctx context.Context, ledgerIndex int64) (*LedgerCh
 		&cp.TransactionCount,
 		&cp.ProcessingDurationMs,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil // Checkpoint doesn't exist
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint: %w", err)
 	}
-	
+
 	return cp, nil
 }
 
@@ -311,6 +311,29 @@ type CompletedTrade struct {
 	LedgerHash   string
 }
 
+type QuoteRegistryEntry struct {
+	QuoteHash []byte
+	PartnerID string
+	Route     []byte
+	AmountIn  string
+	AmountOut string
+	RouterBps int
+	ExpiresAt time.Time
+	CreatedAt time.Time
+}
+
+type UsageEvent struct {
+	PartnerID   string
+	QuoteHash   []byte
+	Pair        string
+	AmountIn    string
+	AmountOut   string
+	RouterBps   int
+	FeeAmount   string
+	TxHash      string
+	LedgerIndex int64
+}
+
 // InsertCompletedTrade records a completed Lucendex trade
 func (s *Store) InsertCompletedTrade(ctx context.Context, trade *CompletedTrade) error {
 	query := `
@@ -321,7 +344,7 @@ func (s *Store) InsertCompletedTrade(ctx context.Context, trade *CompletedTrade)
 		ON CONFLICT (tx_hash) DO NOTHING
 		RETURNING id
 	`
-	
+
 	// Convert Route map to JSON
 	var routeJSON []byte
 	var err error
@@ -333,7 +356,7 @@ func (s *Store) InsertCompletedTrade(ctx context.Context, trade *CompletedTrade)
 	} else {
 		routeJSON = []byte("{}")
 	}
-	
+
 	err = s.db.QueryRowContext(ctx, query,
 		trade.QuoteHash,
 		trade.TxHash,
@@ -347,16 +370,16 @@ func (s *Store) InsertCompletedTrade(ctx context.Context, trade *CompletedTrade)
 		trade.LedgerIndex,
 		trade.LedgerHash,
 	).Scan(&trade.ID)
-	
+
 	if err == sql.ErrNoRows {
 		// Conflict - trade already exists, this is fine
 		return nil
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to insert completed trade: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -367,24 +390,24 @@ func (s *Store) LogConnectionEvent(service, event string, attempt int, err error
 	if s == nil || s.db == nil {
 		return
 	}
-	
+
 	// Short timeout for audit log - don't block normal operations
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	
+
 	query := `
 		INSERT INTO core.connection_events
 			(service, event, attempt, error, duration_ms, metadata)
 		VALUES
 			($1, $2, $3, $4, $5, $6::jsonb)
 	`
-	
+
 	var errStr *string
 	if err != nil {
 		errMsg := err.Error()
 		errStr = &errMsg
 	}
-	
+
 	var metaJSON []byte
 	if metadata != nil {
 		var jsonErr error
@@ -396,11 +419,74 @@ func (s *Store) LogConnectionEvent(service, event string, attempt int, err error
 	} else {
 		metaJSON = []byte("{}")
 	}
-	
+
 	_, execErr := s.db.ExecContext(ctx, query, service, event, attempt, errStr, durationMs, string(metaJSON))
 	if execErr != nil {
 		// Audit log failed - don't fail the operation, but we can't log it either
 		// In production, this might be sent to an external monitoring system
 		return
 	}
+}
+
+func (s *Store) GetQuoteRegistryEntry(ctx context.Context, quoteHash []byte) (*QuoteRegistryEntry, error) {
+	query := `
+		SELECT quote_hash, partner_id::text, route, amount_in::text, amount_out::text, router_bps, expires_at, created_at
+		FROM quote_registry
+		WHERE quote_hash = $1
+	`
+
+	entry := &QuoteRegistryEntry{}
+	err := s.db.QueryRowContext(ctx, query, quoteHash).Scan(
+		&entry.QuoteHash,
+		&entry.PartnerID,
+		&entry.Route,
+		&entry.AmountIn,
+		&entry.AmountOut,
+		&entry.RouterBps,
+		&entry.ExpiresAt,
+		&entry.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load quote registry entry: %w", err)
+	}
+
+	return entry, nil
+}
+
+func (s *Store) DeleteQuoteRegistryEntry(ctx context.Context, quoteHash []byte) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM quote_registry WHERE quote_hash = $1`, quoteHash)
+	if err != nil {
+		return fmt.Errorf("failed to delete quote registry entry: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) InsertUsageEvent(ctx context.Context, event *UsageEvent) error {
+	query := `
+		INSERT INTO usage_events
+			(partner_id, quote_hash, pair, amount_in, amount_out, router_bps, fee_amount, tx_hash, ledger_index)
+		VALUES
+			($1, $2, $3, $4::numeric, $5::numeric, $6, $7::numeric, $8, $9)
+		ON CONFLICT DO NOTHING
+	`
+
+	_, err := s.db.ExecContext(ctx, query,
+		event.PartnerID,
+		event.QuoteHash,
+		event.Pair,
+		event.AmountIn,
+		event.AmountOut,
+		event.RouterBps,
+		event.FeeAmount,
+		event.TxHash,
+		event.LedgerIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to insert usage event: %w", err)
+	}
+	return nil
 }

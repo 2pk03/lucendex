@@ -18,6 +18,8 @@ type QuoteEngine struct {
 type KVStore interface {
 	GetQuote(hash [32]byte) ([]byte, bool)
 	SetQuote(hash [32]byte, route []byte, ttl time.Duration) error
+	SetLedgerIndex(idx uint32) error
+	GetLedgerIndex() (uint32, bool)
 }
 
 func NewQuoteEngine(validator *Validator, pathfinder *Pathfinder, breaker *CircuitBreaker, kv KVStore, routerBps int) *QuoteEngine {
@@ -101,8 +103,8 @@ func (qe *QuoteEngine) calculatePriceImpact(route *Route, amountIn decimal.Decim
 	}
 
 	executionPrice := finalAmount.Div(amountIn)
-	
+
 	impact := decimal.NewFromInt(1).Sub(executionPrice).Abs()
-	
+
 	return impact
 }

@@ -7,15 +7,14 @@ import (
 )
 
 type Router struct {
-	quoteEngine      *QuoteEngine
-	validator        *Validator
-	pathfinder       *Pathfinder
-	breaker          *CircuitBreaker
-	store            RouterStoreInterface
-	kv               KVStore
-	mu               sync.RWMutex
-	stopped          bool
-	currentLedgerIdx uint32
+	quoteEngine *QuoteEngine
+	validator   *Validator
+	pathfinder  *Pathfinder
+	breaker     *CircuitBreaker
+	store       RouterStoreInterface
+	kv          KVStore
+	mu          sync.RWMutex
+	stopped     bool
 }
 
 type RouterStoreInterface interface {
@@ -24,10 +23,11 @@ type RouterStoreInterface interface {
 	LogAudit(ctx context.Context, log interface{}) error
 }
 
-func NewRouter(quoteEngine *QuoteEngine, store RouterStoreInterface) *Router {
+func NewRouter(quoteEngine *QuoteEngine, store RouterStoreInterface, kv KVStore) *Router {
 	return &Router{
 		quoteEngine: quoteEngine,
 		store:       store,
+		kv:          kv,
 	}
 }
 
@@ -35,13 +35,13 @@ func (r *Router) Quote(ctx context.Context, req *QuoteRequest, ledgerIndex uint3
 	start := time.Now()
 
 	quote, err := r.quoteEngine.GenerateQuote(ctx, req, ledgerIndex)
-	
+
 	durationMs := int(time.Since(start).Milliseconds())
-	
+
 	outcome := "success"
 	severity := "info"
 	var errorCode *string
-	
+
 	if err != nil {
 		outcome = "rejected"
 		severity = "warn"
@@ -61,7 +61,7 @@ func (r *Router) Quote(ctx context.Context, req *QuoteRequest, ledgerIndex uint3
 	if errorCode != nil {
 		auditLog["error_code"] = *errorCode
 	}
-	
+
 	_ = r.store.LogAudit(ctx, auditLog)
 
 	return quote, err
@@ -72,15 +72,19 @@ func (r *Router) GenerateQuote(ctx context.Context, req *QuoteRequest, ledgerInd
 }
 
 func (r *Router) GetCurrentLedgerIndex() uint32 {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.currentLedgerIdx
+	if r.kv == nil {
+		return 0
+	}
+	if idx, ok := r.kv.GetLedgerIndex(); ok {
+		return idx
+	}
+	return 0
 }
 
 func (r *Router) SetCurrentLedgerIndex(idx uint32) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.currentLedgerIdx = idx
+	if r.kv != nil {
+		_ = r.kv.SetLedgerIndex(idx)
+	}
 }
 
 func (r *Router) GetAvailablePairs(ctx context.Context) ([]TradingPairInfo, error) {

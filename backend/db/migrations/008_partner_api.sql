@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS usage_events (
     ts TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+GRANT USAGE, SELECT ON SEQUENCE usage_events_id_seq TO indexer_rw;
+
 CREATE INDEX IF NOT EXISTS idx_usage_events_partner ON usage_events(partner_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_usage_events_quote_hash ON usage_events(quote_hash);
 CREATE INDEX IF NOT EXISTS idx_usage_events_tx_hash ON usage_events(tx_hash);

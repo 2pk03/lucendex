@@ -40,6 +40,7 @@ func main() {
 	pathfinder := router.NewPathfinder(pools, offers)
 
 	quoteEngine := router.NewQuoteEngine(validator, pathfinder, breaker, kvStore, routerBps)
+	_ = router.NewRouter(quoteEngine, dbStore, kvStore)
 
 	log.Printf("Router started: routerBps=%d, threshold=%.2f%%", routerBps, threshold*100)
 
@@ -67,14 +68,14 @@ func startCleanupLoop(ctx context.Context, store *store.RouterStore) {
 			return
 		case <-ticker.C:
 			cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			
+
 			count1, _ := store.CleanupExpiredRateLimits(cleanupCtx)
 			count2, _ := store.CleanupUsedQuotes(cleanupCtx)
-			
+
 			if count1 > 0 || count2 > 0 {
 				fmt.Printf("Cleaned: %d rate limits, %d quotes\n", count1, count2)
 			}
-			
+
 			cancel()
 		}
 	}

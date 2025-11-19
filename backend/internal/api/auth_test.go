@@ -24,10 +24,6 @@ type mockDB struct {
 	err       error
 }
 
-func (m *mockDB) GetAPIKey() *APIKey {
-	return m.apiKey
-}
-
 func (m *mockDB) GetPartnerByID(ctx context.Context, partnerID uuid.UUID) (*Partner, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -36,6 +32,13 @@ func (m *mockDB) GetPartnerByID(ctx context.Context, partnerID uuid.UUID) (*Part
 }
 
 func (m *mockDB) GetAPIKeyByPublicKey(ctx context.Context, publicKey string) (*APIKey, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.apiKey, nil
+}
+
+func (m *mockDB) GetActiveAPIKey(ctx context.Context, partnerID uuid.UUID) (*APIKey, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -67,6 +70,10 @@ func (m *mockDB) StoreQuoteRegistry(ctx context.Context, registry *QuoteRegistry
 
 func (m *mockDB) GetIndexerLag(ctx context.Context) (int, error) {
 	return 0, m.err
+}
+
+func (m *mockDB) UpdateNetworkLedger(ctx context.Context, ledger uint32) error {
+	return m.err
 }
 
 func TestAuthMiddleware_ValidSignature(t *testing.T) {

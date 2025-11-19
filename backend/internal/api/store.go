@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,21 @@ func (s *PostgresStore) GetAPIKeyByPublicKey(ctx context.Context, publicKey stri
 		return nil, err
 	}
 	return &k, nil
+}
+
+func (s *PostgresStore) GetActiveAPIKey(ctx context.Context, partnerID uuid.UUID) (*APIKey, error) {
+	var apiKey APIKey
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, partner_id, public_key, label, created_at, revoked, revoked_at
+		FROM api_keys
+		WHERE partner_id = $1 AND revoked = false
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, partnerID).Scan(&apiKey.ID, &apiKey.PartnerID, &apiKey.PublicKey, &apiKey.Label, &apiKey.CreatedAt, &apiKey.Revoked, &apiKey.RevokedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &apiKey, nil
 }
 
 func (s *PostgresStore) CheckRequestID(ctx context.Context, requestID uuid.UUID, partnerID uuid.UUID) (bool, error) {
@@ -116,9 +132,49 @@ func (s *PostgresStore) GetPartnerUsage(ctx context.Context, partnerID uuid.UUID
 }
 
 func (s *PostgresStore) GetIndexerLag(ctx context.Context) (int, error) {
-	var lag int
+	var lag sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(ledger_index), 0) FROM core.ledger_checkpoints
+		WITH latest AS (
+			SELECT COALESCE(MAX(ledger_index), 0) AS indexed
+			FROM core.ledger_checkpoints
+		),
+		network AS (
+			SELECT validated_ledger
+			FROM core.network_state
+			WHERE id = 1
+		)
+		SELECT GREATEST(network.validated_ledger - latest.indexed, 0)
+		FROM latest, network
 	`).Scan(&lag)
-	return lag, err
+	if err == sql.ErrNoRows {
+		return -1, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if !lag.Valid {
+		return -1, nil
+	}
+	return int(lag.Int64), nil
+}
+
+func (s *PostgresStore) UpdateNetworkLedger(ctx context.Context, ledger uint32) error {
+	result, err := s.db.ExecContext(ctx, `
+		INSERT INTO core.network_state (id, validated_ledger, updated_at)
+		VALUES (1, $1, now())
+		ON CONFLICT (id)
+		DO UPDATE SET validated_ledger = EXCLUDED.validated_ledger,
+		             updated_at = EXCLUDED.updated_at
+	`, ledger)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("failed to update network ledger")
+	}
+	return nil
 }

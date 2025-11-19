@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -32,11 +34,13 @@ type AuthMiddleware struct {
 type DB interface {
 	GetPartnerByID(ctx context.Context, partnerID uuid.UUID) (*Partner, error)
 	GetAPIKeyByPublicKey(ctx context.Context, publicKey string) (*APIKey, error)
+	GetActiveAPIKey(ctx context.Context, partnerID uuid.UUID) (*APIKey, error)
 	CheckRequestID(ctx context.Context, requestID uuid.UUID, partnerID uuid.UUID) (bool, error)
 	StoreRequestID(ctx context.Context, requestID uuid.UUID, partnerID uuid.UUID, expiresAt time.Time) error
 	GetPartnerUsage(ctx context.Context, partnerID uuid.UUID, month string) (*UsageResponse, error)
 	StoreQuoteRegistry(ctx context.Context, registry *QuoteRegistry) error
 	GetIndexerLag(ctx context.Context) (int, error)
+	UpdateNetworkLedger(ctx context.Context, ledger uint32) error
 }
 
 func NewAuthMiddleware(db DB) *AuthMiddleware {
@@ -115,13 +119,14 @@ func (am *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Read and hash body
+		// Enforce max body size and hash body
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read request body")
 			return
 		}
-		r.Body = io.NopCloser(io.Reader(newBytesReader(body)))
+		r.Body = io.NopCloser(bytes.NewReader(body))
 
 		bodyHash := sha256.Sum256(body)
 
@@ -135,7 +140,7 @@ func (am *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 		)
 
 		// Get API key
-		apiKey, err := am.getAPIKeyForPartner(ctx, partnerID)
+		apiKey, err := am.db.GetActiveAPIKey(ctx, partnerID)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, ErrInvalidPartner.Error())
 			return
@@ -150,12 +155,14 @@ func (am *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 
 		pubKeyBytes, err := hex.DecodeString(apiKey.PublicKey)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "invalid public key in database")
+			log.Printf("invalid public key for partner %s: %v", partnerID, err)
+			writeError(w, http.StatusInternalServerError, "authentication error")
 			return
 		}
 
 		if len(pubKeyBytes) != ed25519.PublicKeySize {
-			writeError(w, http.StatusInternalServerError, "invalid public key size")
+			log.Printf("invalid public key size for partner %s", partnerID)
+			writeError(w, http.StatusInternalServerError, "authentication error")
 			return
 		}
 
@@ -167,8 +174,8 @@ func (am *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 		// Store request ID (expires in 2 minutes)
 		expiresAt := time.Now().Add(2 * time.Minute)
 		if err := am.db.StoreRequestID(ctx, requestID, partnerID, expiresAt); err != nil {
-			// Log but don't fail - this is a race condition protection
-			// If storage fails, signature was valid so allow request
+			writeError(w, http.StatusInternalServerError, "failed to process request")
+			return
 		}
 
 		// Add partner context
@@ -177,52 +184,6 @@ func (am *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-func (am *AuthMiddleware) getAPIKeyForPartner(ctx context.Context, partnerID uuid.UUID) (*APIKey, error) {
-	// Get first active API key for this partner via interface
-	// In a real implementation, would use GetAPIKeyByPartnerID method
-	// For now, return mock data in tests or implement proper query
-	if store, ok := am.db.(*PostgresStore); ok {
-		var apiKey APIKey
-		err := store.db.QueryRowContext(ctx, `
-			SELECT id, partner_id, public_key, label, created_at, revoked, revoked_at
-			FROM api_keys
-			WHERE partner_id = $1 AND revoked = false
-			LIMIT 1
-		`, partnerID).Scan(&apiKey.ID, &apiKey.PartnerID, &apiKey.PublicKey, &apiKey.Label, &apiKey.CreatedAt, &apiKey.Revoked, &apiKey.RevokedAt)
-		if err != nil {
-			return nil, err
-		}
-		return &apiKey, nil
-	}
-	// Mock path - get via getter method
-	type APIKeyGetter interface {
-		GetAPIKey() *APIKey
-	}
-	if mockDB, ok := am.db.(APIKeyGetter); ok {
-		return mockDB.GetAPIKey(), nil
-	}
-	return nil, ErrInvalidPartner
-}
-
-// Helper to create bytes.Reader from []byte
-type bytesReader struct {
-	data []byte
-	pos  int
-}
-
-func newBytesReader(data []byte) *bytesReader {
-	return &bytesReader{data: data}
-}
-
-func (br *bytesReader) Read(p []byte) (n int, err error) {
-	if br.pos >= len(br.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, br.data[br.pos:])
-	br.pos += n
-	return n, nil
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

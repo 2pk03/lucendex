@@ -13,10 +13,10 @@ CREATE TABLE IF NOT EXISTS core.connection_events (
 );
 
 -- Index for queries by service + timestamp
-CREATE INDEX idx_connection_events_service_ts ON core.connection_events(service, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_connection_events_service_ts ON core.connection_events(service, ts DESC);
 
 -- Index for querying failures
-CREATE INDEX idx_connection_events_failures ON core.connection_events(event, ts DESC) WHERE event = 'failure';
+CREATE INDEX IF NOT EXISTS idx_connection_events_failures ON core.connection_events(event, ts DESC) WHERE event = 'failure';
 
 -- Comment
 COMMENT ON TABLE core.connection_events IS 'Complete audit trail of all connection attempts for fintech compliance';
